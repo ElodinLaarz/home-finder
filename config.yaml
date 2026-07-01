@@ -1,0 +1,96 @@
+# Home-finder search configuration.
+# Non-secret, version-controlled. Secrets live in env vars (see .env.example).
+# Values marked CHANGEME are placeholders — set them to your real search before first run.
+
+search:
+  # Center + radius of the area to pull from RentCast (radius in miles).
+  # Keep this generous — the isochrone gate does the real geographic filtering.
+  center:
+    lat: 39.9612 # CHANGEME
+    lng: -82.9988 # CHANGEME
+  radius_miles: 20
+
+commute:
+  # The fixed location your drive time is measured to (work, family, etc.)
+  destination:
+    lat: 39.9612 # CHANGEME
+    lng: -82.9988 # CHANGEME
+  # Hard gate: predicted door-to-door drive time at your departure window.
+  max_minutes: 35
+  # When you'd actually leave. Routing always uses the NEXT future occurrence
+  # of this weekday+time, so predictions reflect typical traffic for that slot.
+  departure:
+    day_of_week: tuesday
+    time: "08:00"
+    timezone: America/New_York # CHANGEME
+  # Stage-1 cheap gate: a deliberately generous off-peak isochrone polygon.
+  # Padded so it never false-excludes a home the precise Stage-2 check would keep.
+  isochrone:
+    buffer_minutes: 10 # polygon = max_minutes + buffer (capped at Mapbox's 60-min limit)
+    profile: driving # off-peak profile is LARGER than peak → conservative gate
+    cache_days: 30 # polygon is cached in the state DB and refreshed after this many days
+
+filters:
+  # The ONLY hard gates besides measured commute. Fast, deterministic, auditable.
+  property_types: ["Single Family"]
+  min_price: null
+  max_price: 550000 # CHANGEME
+  min_beds: 3
+  min_baths: 2
+  min_sqft: 1400
+  min_lot_sqft: null
+  min_year_built: null
+  max_hoa_fee: null
+  # If a listing is missing a field a gate needs, keep it (fail-open) rather than
+  # silently dropping on bad data. Set true to fail-closed instead.
+  drop_if_missing: false
+
+scoring:
+  enabled: true
+  # claude-haiku-4-5 keeps scoring at ~$0.01/listing. If rankings feel shallow,
+  # step up to claude-sonnet-5 or claude-opus-4-8 (see README for pricing).
+  model: claude-haiku-4-5
+  # New listings scoring >= this (weighted 0-10) trigger an instant ping.
+  instant_threshold: 8.0
+  # Cost guard: max listings scored per run (excess still appears in the digest, unscored).
+  max_per_run: 25
+  # Attach a Google Street View image of the address when available (needs GOOGLE_MAPS_API_KEY
+  # with Street View Static API enabled). RentCast provides no listing photos, so this is the
+  # only visual signal — used for street context: highway adjacency, power lines, curb appeal.
+  use_street_view: true
+  # Your personal rubric. Scores rank and annotate — they NEVER drop a listing.
+  rubric:
+    - key: quiet_street
+      weight: 2.0
+      description: >
+        Quiet residential street: not on or backing onto a highway, arterial road,
+        rail line, or commercial strip.
+    - key: value
+      weight: 1.5
+      description: >
+        Price looks fair for the size, lot, and year relative to the numbers given
+        (price per sqft, days on market, price cuts).
+    - key: space
+      weight: 1.0
+      description: >
+        Layout headroom: enough bedrooms for a dedicated home office; usable lot.
+    - key: condition_risk
+      weight: 1.0
+      description: >
+        Low renovation/flip risk signals: age vs price, suspicious relist/price
+        history, very short ownership turnaround.
+
+notify:
+  enabled: true
+  # Max listings detailed in one digest (the rest are summarized in a count).
+  digest_max_listings: 30
+
+state:
+  # Local SQLite path. If TURSO_DATABASE_URL/TURSO_AUTH_TOKEN are set, this file
+  # becomes an embedded replica synced against the remote Turso database.
+  path: homefinder.db
+
+run:
+  # An active stored listing missing from the feed this many consecutive runs
+  # is marked inactive (likely sold/delisted).
+  mark_inactive_after_runs: 3

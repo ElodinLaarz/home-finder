@@ -1,0 +1,58 @@
+name: homefinder
+
+on:
+  schedule:
+    # Once daily fits RentCast's 50-calls/month free tier (each run uses 1-2
+    # paginated calls). For twice daily add a second cron line AND move to a
+    # paid RentCast tier first.
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "run mode"
+        type: choice
+        default: normal
+        options: [normal, seed, dry-run]
+
+# Single-writer guarantee: never overlap a previous or manual run.
+concurrency:
+  group: home-finder
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Ensure persistent state is configured
+        run: |
+          if [ -z "${{ secrets.TURSO_DATABASE_URL }}" ]; then
+            echo "::error::TURSO_DATABASE_URL secret is not set. Scheduled runs need persistent state (Turso) — an ephemeral runner's SQLite file is discarded, so every run would be a cold start that re-bills routing/scoring and re-notifies the whole market."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: uv sync --extra turso
+
+      - name: Run pipeline
+        run: |
+          MODE="${{ github.event.inputs.mode || 'normal' }}"
+          FLAG=""
+          if [ "$MODE" = "seed" ]; then FLAG="--seed"; fi
+          if [ "$MODE" = "dry-run" ]; then FLAG="--dry-run"; fi
+          uv run python -m homefinder $FLAG
+        env:
+          RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}

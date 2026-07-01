@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets — never commit
+.env
+
+# Local state & caches (state lives in Turso / local DB, never in git)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.cache/
